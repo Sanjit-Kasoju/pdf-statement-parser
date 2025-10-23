@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Credit Card Statement Parser</title>
+    <!-- 1. Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. Load PDF.js (the PDF parsing library) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js" xintegrity="sha512-BqHEmMaj6icUPVqcNfNca9+BYL8RG/NskCfE3eY6klE+T2anTzX8VeiRILCjAa1GjLcUbwjPqb/C/J+8sKjscw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js" xintegrity="sha512-XLC/YJxe3J/jUu8TqIssAOp8dJ3QoecjPjM2gEGr2mQOEZT/cE/34cTQzwR3KNZqLOCrK/GfUfHl8SIeXwPseA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        /* A simple spinning loader */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased">
+
+    <!-- Header -->
+    <header class="bg-gray-800 text-white p-4 shadow-md">
+        <div class="container mx-auto max-w-5xl">
+            <h1 class="text-2xl font-bold">Credit Card Statement Parser</h1>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto max-w-5xl p-4 md:p-8">
+        <div class="grid md:grid-cols-2 gap-8">
+
+            <!-- Left Column: Upload & Instructions -->
+            <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">1. Upload Your Statement</h2>
+                <p class="text-gray-600 mb-4 text-sm">
+                    This tool parses PDF statements to find 5 key data points. It uses regular expressions to find data and works best with digital-native (not scanned) PDFs.
+                </p>
+                <p class="text-gray-600 mb-4 text-sm font-medium">
+                    Supported Issuers: <span class="font-normal">Citibank, American Express, Axis, SBI, HDFC</span>
+                </p>
+
+                <!-- File Upload -->
+                <div>
+                    <label for="pdfUpload" class="block text-sm font-medium text-gray-700 mb-2">Select a PDF file:</label>
+                    <input type="file" id="pdfUpload" accept="application/pdf" class="w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100
+                    "/>
+                </div>
+
+                <!-- Parse Button & Loader -->
+                <div class="mt-6">
+                    <button id="parseButton" class="w-full bg-blue-600 text-white font-bold py-2 px-4 rounded-md hover:bg-blue-700 transition duration-300 flex items-center justify-center">
+                        <span id="buttonText">Parse Statement</span>
+                        <div id="loadingIndicator" class="loader hidden ml-3"></div>
+                    </button>
+                </div>
+
+                <!-- Error Message Box -->
+                <div id="errorMessage" class="hidden mt-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-md" role="alert">
+                    <strong class="font-bold">Error:</strong>
+                    <span id="errorText" class="block sm:inline">Could not parse the PDF.</span>
+                </div>
+
+                <!-- Debugging Tools -->
+                <div class="mt-4">
+                    <button id="showTextButton" class="w-full bg-gray-500 text-white font-bold py-2 px-4 rounded-md hover:bg-gray-600 transition duration-300">Show Raw Extracted Text</button>
+                    <pre id="rawTextContainer" class="hidden mt-4 bg-gray-100 p-4 rounded-md border border-gray-300 text-xs overflow-auto max-h-64"></pre>
+                </div>
+
+            </div>
+
+            <!-- Right Column: Results -->
+            <div class="bg-white p-6 rounded-lg shadow-md border border-gray-200">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">2. Extracted Data</h2>
+                <div id="resultsContainer" class="text-gray-600">
+                    <p>Results will appear here after parsing.</p>
+                </div>
+                
+                <!-- This is the template for results, hidden by default -->
+                <div id="resultsTemplate" class="hidden space-y-4">
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-medium text-gray-600">Card Issuer:</span>
+                        <span id="result-issuer" class="font-mono bg-gray-100 text-gray-800 px-3 py-1 rounded-md text-sm"></span>
+                    </div>
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-medium text-gray-600">Last 4 Digits:</span>
+                        <span id="result-last4" class="font-mono bg-gray-100 text-gray-800 px-3 py-1 rounded-md text-sm"></span>
+                    </div>
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-medium text-gray-600">Statement Period:</span>
+                        <span id="result-period" class="font-mono bg-gray-100 text-gray-800 px-3 py-1 rounded-md text-sm"></span>
+                    </div>
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-medium text-gray-600">Payment Due Date:</span>
+                        <span id="result-dueDate" class="font-mono bg-gray-100 text-gray-800 px-3 py-1 rounded-md text-sm"></span>
+                    </div>
+                    <div class="flex justify-between items-center border-b pb-2">
+                        <span class="font-medium text-gray-600">Total Balance Due:</span>
+                        <span id="result-balance" class="font-mono bg-green-100 text-green-800 font-bold px-3 py-1 rounded-md text-sm"></span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Set the worker for PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
+        // Get DOM elements
+        const pdfUpload = document.getElementById('pdfUpload');
+        const parseButton = document.getElementById('parseButton');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const buttonText = document.getElementById('buttonText');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const resultsTemplate = document.getElementById('resultsTemplate');
+        const errorMessage = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        const showTextButton = document.getElementById('showTextButton');
+        const rawTextContainer = document.getElementById('rawTextContainer');
+
+        let lastExtractedText = ''; // Store the extracted text for debugging
+
+        // Main click event listener
+        parseButton.addEventListener('click', handleParse);
+
+        // Debug button event listener
+        showTextButton.addEventListener('click', () => {
+            if (lastExtractedText) {
+                rawTextContainer.textContent = lastExtractedText;
+                rawTextContainer.classList.remove('hidden');
+            } else {
+                rawTextContainer.textContent = 'No text extracted yet. Please parse a file first.';
+                rawTextContainer.classList.remove('hidden');
+            }
+        });
+
+        /**
+         * Main function to handle the file parsing
+         */
+        async function handleParse() {
+            if (pdfUpload.files.length === 0) {
+                showError("Please select a PDF file first.");
+                return;
+            }
+
+            // --- UI Start ---
+            setLoadingState(true);
+            hideError();
+            resultsContainer.innerHTML = '<p>Parsing... please wait.</p>';
+            resultsTemplate.classList.add('hidden');
+            rawTextContainer.classList.add('hidden'); // Hide debug text on new parse
+            rawTextContainer.textContent = '';
+            // --- End UI ---
+
+            const file = pdfUpload.files[0];
+            const fileReader = new FileReader();
+
+            fileReader.onload = async function() {
+                try {
+                    const typedarray = new Uint8Array(this.result);
+                    const pdf = await pdfjsLib.getDocument({ data: typedarray }).promise;
+                    let allText = '';
+
+                    // Iterate through all pages and extract text
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const textContent = await page.getTextContent();
+                        allText += textContent.items.map(item => item.str).join(' ') + ' ';
+                    }
+
+                    // Normalize text (remove extra spaces)
+                    const normalizedText = allText.replace(/\s+/g, ' ').trim();
+                    lastExtractedText = normalizedText; // Store text for debugging
+
+                    // Parse the text
+                    const data = parseStatement(normalizedText);
+
+                    // Display the results
+                    displayResults(data);
+
+                } catch (error) {
+                    console.error("Error parsing PDF:", error);
+                    showError("Could not read or parse this PDF file. It may be corrupted or encrypted.");
+                } finally {
+                    setLoadingState(false);
+                }
+            };
+
+            fileReader.onerror = function() {
+                showError("Failed to read the file.");
+                setLoadingState(false);
+            };
+
+            fileReader.readAsArrayBuffer(file);
+        }
+
+        /**
+         * The "brains" of the parser.
+         * Uses a bank of regular expressions to find the data.
+         * @param {string} text - The full, normalized text from the PDF.
+         * @returns {object} - An object containing the extracted data.
+         */
+        function parseStatement(text) {
+            const data = {
+                issuer: 'Unknown',
+                last4: null,
+                statementPeriod: null,
+                dueDate: null,
+                totalBalance: null
+            };
+
+            // 1. Identify Issuer (Simple keyword check)
+            // Updated list of supported banks
+            if (/Citi/i.test(text) || /Citibank/i.test(text)) data.issuer = 'Citibank';
+            else if (/American Express/i.test(text)) data.issuer = 'American Express';
+            else if (/Axis Bank/i.test(text) || /\bAxis\b/i.test(text)) data.issuer = 'Axis Bank';
+            else if (/SBI/i.test(text) || /State Bank of India/i.test(text)) data.issuer = 'SBI';
+            else if (/HDFC Bank/i.test(text) || /\bHDFC\b/i.test(text)) data.issuer = 'HDFC Bank';
+
+            // Helper function to try multiple regex patterns
+            const findMatch = (patterns) => {
+                for (const pattern of patterns) {
+                    const match = text.match(pattern);
+                    if (match && match[1]) {
+                        return match[1].trim();
+                    }
+                }
+                return null;
+            };
+
+            // 2. Find Last 4 Digits
+            const last4Patterns = [
+                /Account Number: \S+ (\d{4})/i, // For Amex: 3777 89XXXX XXX1009
+                /\bXXX(\d{4})\b/i, // For Amex: XXX1009
+                /Card Number \*{10,}(\d{4})/i, // From user sample
+                /Account Number ending in (\d{4})/i,
+                /Card ending in (\d{4})/i,
+                /Account \S* (\*{4}\s?\*{4}\s?\*{4}\s?)(\d{4})/i, // Acct **** **** **** 1234
+                /Card Number \S* (\d{4})/i,
+                /\*{4}\s\*{4}\s\*{4}\s(\d{4})/i, // **** **** **** 1234
+                /Account No \S* (\d{4})/i // Account No. 1234
+            ];
+            data.last4 = findMatch(last4Patterns);
+
+            // 3. Find Statement Period (This is often two dates)
+            const periodPatterns = [
+                /Billing Period (\d{1,2} \w{3}, \d{4} - \d{1,2} \w{3}, \d{4})/i, // Amex format
+                /Statement Period: ([\d]{1,2} \w{3} \d{4} to [\d]{1,2} \w{3} \d{4})/i, // From user sample
+                /Statement Period\s*:?\s*([\w\. ,]+ to [\w\. ,]+)/i, // Statement Period Jan 1, 2024 to Jan 31, 2024
+                /Billing Cycle\s*([\w\. ,]+ - [\w\. ,]+)/i,
+                /Opening Date\s*([\w\. ,]+)\s*Closing Date\s*([\w\. ,]+)/i, // BofA style
+                /(\w{3} \d{1,2} - \w{3} \d{1,2}, \d{4})/i, // e.g., Sep 15 - Oct 14, 2024
+                /Statement Period\s*([\w\/]+ - [\w\/]+)/i, // e.g., 09/01/24 - 10/01/24
+                /Billing Period\s*([\w\. ,]+ - [\w\. ,]+)/i
+            ];
+            data.statementPeriod = findMatch(periodPatterns);
+
+            // 4. Find Payment Due Date
+            const dueDatePatterns = [
+                /Payment Due Date (\d{1,2} \w{3}, \d{4})/i, // Amex format
+                /Due Date: ([\d\/]+)/i, // From user sample
+                /Payment Due Date\s*([\w\. ,]+)/i,
+                /Please Pay By\s*([\w\. ,]+)/i,
+                /New Balance Due Date\s*([\w\. ,]+)/i,
+                /Amount Due By\s*([\w\. ,]+)/i,
+                /PAYMENT DUE DATE\s*([\w\/]+)/i, // All caps, 09/01/24
+                /Please pay by\s*([\w\/]+)/i
+            ];
+            data.dueDate = findMatch(dueDatePatterns);
+
+            // 5. Find Total Balance Due
+            // We use (?:Rs\.?|\$) to match "Rs." or "Rs" or "$"
+            const balancePatterns = [
+                /Total Amount Due: ((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i, // From user sample
+                /New Balance\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i,
+                /Total Balance\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i,
+                /Amount Due\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i,
+                /Minimum Payment Due\s*(?:Rs\.?|\$)\s*[\d,\.]+\s*New Balance\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i, // Chase style
+                /NEW BALANCE\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i, // All caps
+                /Total amount due\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i,
+                /Balance Due\s*((?:Rs\.?|\$)\s*[\d,]+\.\d{2})/i
+            ];
+            data.totalBalance = findMatch(balancePatterns);
+
+            return data;
+        }
+
+        /**
+         * Populates the results table in the UI
+         * @param {object} data - The data object from parseStatement
+         */
+        function displayResults(data) {
+            resultsContainer.innerHTML = ''; // Clear "parsing..." text
+            resultsTemplate.classList.remove('hidden'); // Show the template
+
+            document.getElementById('result-issuer').textContent = data.issuer || 'Not Found';
+            document.getElementById('result-last4').textContent = data.last4 || 'Not Found';
+            document.getElementById('result-period').textContent = data.statementPeriod || 'Not Found';
+            document.getElementById('result-dueDate').textContent = data.dueDate || 'Not Found';
+            document.getElementById('result-balance').textContent = data.totalBalance || 'Not Found';
+        }
+
+        /**
+         * Toggles the loading state of the parse button
+         * @param {boolean} isLoading - Whether to show the loader
+         */
+        function setLoadingState(isLoading) {
+            if (isLoading) {
+                parseButton.disabled = true;
+                buttonText.classList.add('hidden');
+                loadingIndicator.classList.remove('hidden');
+            } else {
+                parseButton.disabled = false;
+                buttonText.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Shows an error message
+         * @param {string} message - The error message to display
+         */
+        function showError(message) {
+            errorText.textContent = message;
+            errorMessage.classList.remove('hidden');
+        }
+
+        /**
+         * Hides the error message
+         */
+        function hideError() {
+            errorMessage.classList.add('hidden');
+        }
+
+    </script>
+
+</body>
+</html>
+
+
+
+
