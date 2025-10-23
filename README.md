@@ -28,8 +28,3 @@ Extract 5 key data points from statements issued by 5 major banks (Citibank, Ame
 * **Format Brittleness:** Relies on regex rules. If a bank changes its statement layout, the parser will break.
 * **Bank-Specific:** Only works for the 5 banks for which rules have been written.
 * **No Scanned PDFs:** Cannot read scanned (image-based) PDFs, only digital-native files.
-
-## Future Improvements
-
-* **OCR Support:** Integrate `Tesseract.js` to read scanned PDFs.
-* **Machine Learning:** Train a Named Entity Recognition (NER) model for a more robust and universal solution.
